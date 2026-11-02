@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GM Buddy | Araç Takip & Filo Yönetimi</title>
+    <!-- PWA Meta Tags -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#090d16">
+    <link rel="manifest" href="/manifest.json">
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #090d16;
+            --bg-card: rgba(16, 23, 38, 0.85);
+            --bg-card-border: rgba(255, 255, 255, 0.08);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-cyan: #06b6d4;
+            --accent-blue: #3b82f6;
+            --accent-emerald: #10b981;
+            --accent-amber: #f59e0b;
+            --accent-red: #ef4444;
+            --sidebar-width: 380px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        body, html {
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+        }
+
+        #app-container {
+            display: flex;
+            height: 100%;
+            width: 100%;
+            position: relative;
+        }
+
+        /* Sidebar Styling */
+        #sidebar {
+            width: var(--sidebar-width);
+            height: 100%;
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            border-right: 1px solid var(--bg-card-border);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 10px 0 30px rgba(0, 0, 0, 0.4);
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--bg-card-border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #06b6d4, #3b82f6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            box-shadow: 0 4px 15px rgba(6, 182, 212, 0.35);
+        }
+
+        .brand-text h1 {
+            font-size: 17px;
+            font-weight: 700;
+            letter-spacing: -0.3px;
+        }
+
+        .brand-text span {
+            font-size: 11px;
+            color: var(--accent-cyan);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .connection-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            background: rgba(16, 185, 129, 0.12);
+            color: var(--accent-emerald);
+            border: 1px solid rgba(16, 185, 129, 0.25);
+        }
+
+        .connection-badge.offline {
+            background: rgba(239, 68, 68, 0.12);
+            color: var(--accent-red);
+            border-color: rgba(239, 68, 68, 0.25);
+        }
+
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: currentColor;
+            box-shadow: 0 0 8px currentColor;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.8); }
+        }
+
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .sidebar-content::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        .sidebar-content::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+
+        /* Metric Widgets */
+        .widget-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .card {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid var(--bg-card-border);
+            border-radius: 14px;
+            padding: 14px 16px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+
+        .card-value {
+            font-size: 24px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            display: flex;
+            align-items: baseline;
+            gap: 4px;
+        }
+
+        .card-value small {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .card-hero {
+            grid-column: span 2;
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.9));
+            border-color: rgba(6, 182, 212, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .hero-speed {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .hero-speed .speed-num {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 42px;
+            font-weight: 700;
+            line-height: 1;
+            color: #fff;
+            text-shadow: 0 0 20px rgba(6, 182, 212, 0.4);
+        }
+
+        .hero-battery {
+            text-align: right;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 4px;
+        }
+
+        .battery-pill {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 12px;
+            color: var(--accent-emerald);
+            font-weight: 700;
+            font-size: 14px;
+        }
+
+        .battery-pill.charging {
+            background: rgba(245, 158, 11, 0.15);
+            border-color: rgba(245, 158, 11, 0.3);
+            color: var(--accent-amber);
+        }
+
+        /* Section Headings */
+        .section-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 8px;
+        }
+
+        .timeline-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .stop-item {
+            background: rgba(30, 41, 59, 0.4);
+            border: 1px solid var(--bg-card-border);
+            border-radius: 12px;
+            padding: 12px 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .stop-item:hover {
+            background: rgba(30, 41, 59, 0.8);
+            border-color: rgba(6, 182, 212, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .stop-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--accent-amber);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+
+        .stop-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .stop-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .stop-duration {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--accent-amber);
+            background: rgba(245, 158, 11, 0.1);
+            padding: 2px 6px;
+            border-radius: 6px;
+        }
+
+        .stop-meta {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 3px;
+        }
+
+        /* Bottom Controls / Demo Button */
+        .sidebar-footer {
+            padding: 16px 20px;
+            border-top: 1px solid var(--bg-card-border);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 11px 16px;
+            border-radius: 10px;
+            border: none;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #06b6d4, #2563eb);
+            color: #fff;
+            box-shadow: 0 4px 15px rgba(6, 182, 212, 0.3);
+        }
+
+        .btn-primary:hover {
+            box-shadow: 0 6px 20px rgba(6, 182, 212, 0.5);
+            transform: translateY(-1px);
+        }
+
+        .btn-outline {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--bg-card-border);
+            color: var(--text-secondary);
+        }
+
+        .btn-outline:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+
+        /* Map Canvas */
+        #map-container {
+            flex: 1;
+            height: 100%;
+            position: relative;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+            background: #0f172a;
+        }
+
+        /* Map Floating Controls */
+        .map-overlay-card {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: var(--bg-card);
+            backdrop-filter: blur(15px);
+            border: 1px solid var(--bg-card-border);
+            border-radius: 14px;
+            padding: 12px 18px;
+            z-index: 999;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+        }
+
+        .map-mode-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            padding: 6px 12px;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .map-mode-btn.active {
+            background: rgba(6, 182, 212, 0.15);
+            color: var(--accent-cyan);
+        }
+
+        /* Playback Bar */
+        .playback-bar {
+            position: absolute;
+            bottom: 24px;
+            left: calc(var(--sidebar-width) + 30px);
+            right: 30px;
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--bg-card-border);
+            border-radius: 16px;
+            padding: 14px 20px;
+            z-index: 999;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.5);
+        }
+
+        .play-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--accent-cyan);
+            border: none;
+            color: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 16px;
+            flex-shrink: 0;
+            box-shadow: 0 0 15px rgba(6, 182, 212, 0.5);
+        }
+
+        .slider-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .slider-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--accent-cyan);
+            cursor: pointer;
+        }
+
+        /* Custom Markers */
+        .car-marker {
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.3s ease;
+        }
+
+        .car-marker-icon {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #06b6d4, #3b82f6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 18px;
+            box-shadow: 0 0 20px rgba(6, 182, 212, 0.6);
+            border: 2px solid #fff;
+        }
+
+        .stop-marker-pin {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: #f59e0b;
+            color: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 13px;
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.6);
+            border: 2px solid #fff;
+        }
+
+        /* Date Navigator Styling */
+        .date-navigator-card {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid var(--bg-card-border);
+            border-radius: 12px;
+            padding: 8px 12px;
+            margin-bottom: 12px;
+        }
+
+        .date-nav-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: none;
+            color: var(--text-primary);
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .date-nav-btn:hover {
+            background: rgba(6, 182, 212, 0.2);
+            color: var(--accent-cyan);
+        }
+
+        .date-input-wrapper {
+            flex: 1;
+        }
+
+        .date-input-wrapper input[type="date"] {
+            width: 100%;
+            background: transparent;
+            border: none;
+            color: #fff;
+            font-size: 13px;
+            font-weight: 700;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .date-today-btn {
+            background: rgba(6, 182, 212, 0.15);
+            border: 1px solid rgba(6, 182, 212, 0.3);
+            color: var(--accent-cyan);
+            padding: 6px 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .date-today-btn:hover {
+            background: var(--accent-cyan);
+            color: #000;
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            #app-container {
+                flex-direction: column-reverse;
+            }
+            #sidebar {
+                width: 100%;
+                height: 50%;
+                border-right: none;
+                border-top: 1px solid var(--bg-card-border);
+            }
+            #map-container {
+                width: 100%;
+                height: 50%;
+            }
+            .playback-bar {
+                left: 12px;
+                right: 12px;
+                bottom: 12px;
+                padding: 10px 14px;
+            }
+            .map-overlay-card {
+                top: 10px;
+                right: 10px;
+                padding: 8px 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <!-- Sidebar -->
+    <div id="sidebar">
+        <div class="sidebar-header">
+            <div class="brand">
+                <div class="brand-icon">🚗</div>
+                <div class="brand-text">
+                    <h1>GM Buddy Tracker</h1>
+                    <span>Araç Takip Sistemi</span>
+                </div>
+            </div>
+            <div id="status-badge" class="connection-badge">
+                <div class="status-dot"></div>
+                <span id="status-text">Bağlanıyor...</span>
+            </div>
+        </div>
+
+        <div class="sidebar-content">
+            <!-- Date Navigator -->
+            <div class="date-navigator-card">
+                <button class="date-nav-btn" onclick="stepDate(-1)" title="Önceki Gün">◀</button>
+                <div class="date-input-wrapper">
+                    <input type="date" id="date-picker" onchange="onDateSelect(this.value)">
+                </div>
+                <button class="date-nav-btn" onclick="stepDate(1)" title="Sonraki Gün">▶</button>
+                <button class="date-today-btn" onclick="selectToday()">Bugün</button>
+            </div>
+
+            <!-- Hero Speed Card -->
+            <div class="card card-hero">
+                <div class="hero-speed">
+                    <span class="card-label">Anlık Hız</span>
+                    <div class="card-value">
+                        <span id="live-speed" class="speed-num">0</span>
+                        <small>km/s</small>
+                    </div>
+                </div>
+                <div class="hero-battery">
+                    <span class="card-label">Batarya</span>
+                    <div id="battery-indicator" class="battery-pill">
+                        <span id="bat-icon">⚡</span>
+                        <span id="live-battery">--%</span>
+                    </div>
+                    <small id="last-update-time" style="color: var(--text-muted); font-size: 10px; margin-top: 4px;">Son Güncelleme: --</small>
+                </div>
+            </div>
+
+            <!-- Stats Grid -->
+            <div class="widget-grid">
+                <div class="card">
+                    <div class="card-label">Seçili Gün Yol</div>
+                    <div class="card-value"><span id="stat-distance">0.0</span> <small>km</small></div>
+                </div>
+                <div class="card">
+                    <div class="card-label">Maksimum Hız</div>
+                    <div class="card-value"><span id="stat-max-speed">0.0</span> <small>km/s</small></div>
+                </div>
+                <div class="card">
+                    <div class="card-label">Ortalama Hız</div>
+                    <div class="card-value"><span id="stat-avg-speed">0.0</span> <small>km/s</small></div>
+                </div>
+                <div class="card">
+                    <div class="card-label">Toplam Nokta</div>
+                    <div class="card-value"><span id="stat-points">0</span></div>
+                </div>
+            </div>
+
+            <!-- Stops & Dwell Time Analysis Section -->
+            <div class="section-title">
+                <span>⏱️ Park / Duraklama Noktaları</span>
+                <span id="stop-count" style="font-size: 11px; color: var(--accent-cyan);">0 Durak</span>
+            </div>
+            <div id="timeline-list" class="timeline-container">
+                <div style="text-align: center; color: var(--text-muted); padding: 20px; font-size: 12px;">
+                    Henüz kayıtlı duraklama noktası yok.
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar-footer">
+            <button class="btn btn-primary" onclick="refreshCurrentDay()">
+                <span>🔄 Canlı Veriyi Yenile</span>
+            </button>
+            <div style="display: flex; gap: 8px;">
+                <button class="btn btn-outline" style="flex: 1;" onclick="centerVehicle()">
+                    <span>🎯 Ortala</span>
+                </button>
+                <button class="btn btn-outline" style="flex: 1; color: var(--accent-red);" onclick="clearAllData()">
+                    <span>🗑️ Temizle</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Map Area -->
+    <div id="map-container">
+        <div id="map"></div>
+
+        <!-- Layer Switcher -->
+        <div class="map-overlay-card">
+            <span style="font-size: 12px; font-weight: 700; color: var(--text-secondary);">Harita:</span>
+            <button class="map-mode-btn active" id="btn-layer-dark" onclick="switchTileLayer('dark')">🌙 Koyu</button>
+            <button class="map-mode-btn" id="btn-layer-osm" onclick="switchTileLayer('osm')">🗺️ Sokak</button>
+            <button class="map-mode-btn" id="btn-layer-sat" onclick="switchTileLayer('sat')">🛰️ Uydu</button>
+        </div>
+
+        <!-- Playback Controller -->
+        <div class="playback-bar">
+            <button class="play-btn" id="btn-play-pause" onclick="togglePlayback()">▶</button>
+            <div class="slider-wrapper">
+                <div class="slider-labels">
+                    <span id="play-time-current">--:--</span>
+                    <span>Güzergah Oynatıcı</span>
+                    <span id="play-time-total">--:--</span>
+                </div>
+                <input type="range" id="playback-slider" min="0" max="100" value="0" oninput="onSeekSlider(this.value)">
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+    let map, carMarker, routePolyline, stopsLayerGroup;
+    let darkLayer, osmLayer, satLayer;
+    let currentTileLayer;
+    let historyPoints = [];
+    let isPlaying = false;
+    let playbackInterval = null;
+    let playbackIndex = 0;
+
+    // Initialize Map with 100% Free, No-API-Key Tile Layers
+    function initMap() {
+        darkLayer = L.layerGroup([
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 19,
+                attribution: '&copy; Esri &copy; OpenStreetMap'
+            }),
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 19
+            })
+        ]);
+
+        osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap contributors'
+        });
+
+        satLayer = L.layerGroup([
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 19,
+                attribution: '&copy; Esri, Maxar, Earthstar Geographics'
+            }),
+            L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 19
+            })
+        ]);
+
+        currentTileLayer = darkLayer;
+
+        map = L.map('map', {
+            center: [41.0082, 28.9784],
+            zoom: 12,
+            layers: [darkLayer],
+            zoomControl: false
+        });
+
+        L.control.zoom({ position: 'topright' }).addTo(map);
+
+        stopsLayerGroup = L.layerGroup().addTo(map);
+
+        // Vehicle Marker
+        const carIcon = L.divIcon({
+            className: 'car-marker',
+            html: '<div class="car-marker-icon">🚗</div>',
+            iconSize: [40, 40],
+            iconAnchor: [20, 20]
+        });
+
+        carMarker = L.marker([41.0082, 28.9784], { icon: carIcon }).addTo(map);
+    }
+
+    function switchTileLayer(type) {
+        document.getElementById('btn-layer-dark').classList.toggle('active', type === 'dark');
+        document.getElementById('btn-layer-osm').classList.toggle('active', type === 'osm');
+        document.getElementById('btn-layer-sat').classList.toggle('active', type === 'sat');
+
+        if (currentTileLayer) {
+            map.removeLayer(currentTileLayer);
+        }
+
+        if (type === 'dark') {
+            currentTileLayer = darkLayer;
+        } else if (type === 'sat') {
+            currentTileLayer = satLayer;
+        } else {
+            currentTileLayer = osmLayer;
+        }
+
+        map.addLayer(currentTileLayer);
+    }
+
+    // Polling & Data Fetching
+    async function fetchLiveStatus() {
+        try {
+            const res = await fetch('/api/live');
+            const data = await res.json();
+            
+            const badge = document.getElementById('status-badge');
+            const badgeText = document.getElementById('status-text');
+
+            if (data.data) {
+                const item = data.data;
+                document.getElementById('live-speed').innerText = Math.round(item.speed);
+                document.getElementById('live-battery').innerText = item.battery + '%';
+                document.getElementById('last-update-time').innerText = 'Son: ' + item.datetime;
+
+                const batPill = document.getElementById('battery-indicator');
+                batPill.classList.toggle('charging', item.is_charging === 1);
+                document.getElementById('bat-icon').innerText = item.is_charging ? '⚡' : '🔋';
+
+                // Update vehicle marker
+                const pos = [item.latitude, item.longitude];
+                carMarker.setLatLng(pos);
+
+                // Rotate marker if heading available
+                const iconEl = carMarker.getElement();
+                if (iconEl && item.heading) {
+                    iconEl.style.transform = `rotate(${item.heading}deg)`;
+                }
+
+                if (data.online) {
+                    badge.classList.remove('offline');
+                    badgeText.innerText = item.speed > 3 ? 'HAREKET HALİNDE' : 'PARK EDİLDİ';
+                } else {
+                    badge.classList.add('offline');
+                    badgeText.innerText = 'ÇEVRİMDIŞI (' + Math.round(item.last_seen_seconds_ago / 60) + ' dk)';
+                }
+            } else {
+                badge.classList.add('offline');
+                badgeText.innerText = 'CİHAZ BEKLENİYOR';
+            }
+        } catch (e) {
+            console.error('Live fetch error:', e);
+        }
+    }
+
+    let selectedDate = getTodayDateStr();
+
+    function getTodayDateStr() {
+        const d = new Date();
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    function isToday(dateStr) {
+        return dateStr === getTodayDateStr();
+    }
+
+    function onDateSelect(val) {
+        if (val) {
+            selectedDate = val;
+            fetchHistoryAndStops(selectedDate);
+        }
+    }
+
+    function stepDate(delta) {
+        const cur = new Date(selectedDate);
+        cur.setDate(cur.getDate() + delta);
+        const year = cur.getFullYear();
+        const month = String(cur.getMonth() + 1).padStart(2, '0');
+        const day = String(cur.getDate()).padStart(2, '0');
+        selectedDate = `${year}-${month}-${day}`;
+        document.getElementById('date-picker').value = selectedDate;
+        fetchHistoryAndStops(selectedDate);
+    }
+
+    function selectToday() {
+        selectedDate = getTodayDateStr();
+        document.getElementById('date-picker').value = selectedDate;
+        fetchHistoryAndStops(selectedDate);
+    }
+
+    function refreshCurrentDay() {
+        fetchLiveStatus();
+        fetchHistoryAndStops(selectedDate);
+    }
+
+    async function clearAllData() {
+        if (!confirm('Tüm kayıtlı konum ve duraklama geçmişi silinecektir. Emin misiniz?')) return;
+        try {
+            await fetch('/api/clear');
+            historyPoints = [];
+            if (routePolyline) map.removeLayer(routePolyline);
+            stopsLayerGroup.clearLayers();
+            document.getElementById('timeline-list').innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 20px; font-size: 12px;">Henüz kayıtlı duraklama noktası yok.</div>';
+            document.getElementById('stat-distance').innerText = '0.0';
+            document.getElementById('stat-max-speed').innerText = '0.0';
+            document.getElementById('stat-avg-speed').innerText = '0.0';
+            document.getElementById('stat-points').innerText = '0';
+            document.getElementById('stop-count').innerText = '0 Durak';
+            alert('Veritabanı başarıyla temizlendi.');
+        } catch (e) {
+            alert('Hata: ' + e);
+        }
+    }
+
+    async function fetchHistoryAndStops(dateStr) {
+        const targetDate = dateStr || selectedDate;
+        try {
+            // Fetch History for targetDate
+            const histRes = await fetch('/api/history?date=' + targetDate);
+            const histData = await histRes.json();
+            historyPoints = histData.points || [];
+
+            if (routePolyline) {
+                map.removeLayer(routePolyline);
+            }
+
+            if (historyPoints.length > 0) {
+                const latlngs = historyPoints.map(p => [p.latitude, p.longitude]);
+                routePolyline = L.polyline(latlngs, {
+                    color: '#06b6d4',
+                    weight: 4,
+                    opacity: 0.85,
+                    lineJoin: 'round'
+                }).addTo(map);
+
+                if (!isPlaying) {
+                    map.fitBounds(routePolyline.getBounds(), { padding: [50, 50] });
+                }
+
+                // Update slider limits
+                const slider = document.getElementById('playback-slider');
+                slider.max = historyPoints.length - 1;
+                document.getElementById('play-time-total').innerText = historyPoints[historyPoints.length - 1].datetime;
+            } else {
+                document.getElementById('play-time-total').innerText = '--:--';
+                document.getElementById('play-time-current').innerText = '--:--';
+            }
+
+            // Fetch Stops for targetDate
+            const stopsRes = await fetch('/api/stops?date=' + targetDate);
+            const stopsData = await stopsRes.json();
+            renderStops(stopsData.stops || []);
+
+            // Fetch Stats for targetDate
+            const statsRes = await fetch('/api/stats?date=' + targetDate);
+            const stats = await statsRes.json();
+            document.getElementById('stat-distance').innerText = stats.total_distance_km;
+            document.getElementById('stat-max-speed').innerText = stats.max_speed_kmh;
+            document.getElementById('stat-avg-speed').innerText = stats.avg_speed_kmh;
+            document.getElementById('stat-points').innerText = stats.total_points;
+
+        } catch (e) {
+            console.error('History fetch error:', e);
+        }
+    }
+
+    function renderStops(stops) {
+        stopsLayerGroup.clearLayers();
+        const container = document.getElementById('timeline-list');
+        document.getElementById('stop-count').innerText = stops.length + ' Duraklama';
+
+        if (stops.length === 0) {
+            container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 20px; font-size: 12px;">Henüz duraklama tespit edilmedi.</div>';
+            return;
+        }
+
+        container.innerHTML = '';
+        stops.forEach((stop, idx) => {
+            // Add Stop Pin on Map
+            const stopIcon = L.divIcon({
+                className: 'stop-pin',
+                html: `<div class="stop-marker-pin">${idx + 1}</div>`,
+                iconSize: [28, 28],
+                iconAnchor: [14, 14]
+            });
+
+            const marker = L.marker([stop.latitude, stop.longitude], { icon: stopIcon })
+                .bindPopup(`<b>🅿️ Duraklama #${idx + 1}</b><br>Süre: <b>${stop.duration_text}</b><br>Zaman: ${stop.start_time_str} - ${stop.end_time_str}`)
+                .addTo(stopsLayerGroup);
+
+            // Add Stop Card in Sidebar
+            const item = document.createElement('div');
+            item.className = 'stop-item';
+            item.onclick = () => {
+                map.flyTo([stop.latitude, stop.longitude], 16, { duration: 1.2 });
+                marker.openPopup();
+            };
+
+            item.innerHTML = `
+                <div class="stop-icon">🅿️</div>
+                <div class="stop-info">
+                    <div class="stop-title">
+                        <span>Durak #${idx + 1}</span>
+                        <span class="stop-duration">${stop.duration_text}</span>
+                    </div>
+                    <div class="stop-meta">
+                        Saat: ${stop.start_time_str} - ${stop.end_time_str} | Enlem/Boylam: ${stop.latitude.toFixed(3)}, ${stop.longitude.toFixed(3)}
+                    </div>
+                </div>
+            `;
+            container.appendChild(item);
+        });
+    }
+
+    // Playback Route
+    function togglePlayback() {
+        if (historyPoints.length === 0) return;
+
+        isPlaying = !isPlaying;
+        const btn = document.getElementById('btn-play-pause');
+        btn.innerText = isPlaying ? '⏸' : '▶';
+
+        if (isPlaying) {
+            if (playbackIndex >= historyPoints.length - 1) {
+                playbackIndex = 0;
+            }
+            playbackInterval = setInterval(() => {
+                if (playbackIndex < historyPoints.length) {
+                    const pt = historyPoints[playbackIndex];
+                    carMarker.setLatLng([pt.latitude, pt.longitude]);
+                    document.getElementById('live-speed').innerText = Math.round(pt.speed);
+                    document.getElementById('play-time-current').innerText = pt.datetime;
+                    document.getElementById('playback-slider').value = playbackIndex;
+                    playbackIndex++;
+                } else {
+                    togglePlayback();
+                }
+            }, 120);
+        } else {
+            clearInterval(playbackInterval);
+        }
+    }
+
+    function onSeekSlider(val) {
+        playbackIndex = parseInt(val);
+        if (historyPoints[playbackIndex]) {
+            const pt = historyPoints[playbackIndex];
+            carMarker.setLatLng([pt.latitude, pt.longitude]);
+            document.getElementById('live-speed').innerText = Math.round(pt.speed);
+            document.getElementById('play-time-current').innerText = pt.datetime;
+        }
+    }
+
+    function centerVehicle() {
+        if (carMarker) {
+            map.flyTo(carMarker.getLatLng(), 15, { duration: 1.0 });
+        }
+    }
+
+    async function generateDemoData() {
+        const btn = document.getElementById('btn-demo');
+        btn.innerText = 'Veriler Üretiliyor...';
+        btn.disabled = true;
+
+        try {
+            await fetch('/api/generate_demo', { method: 'POST' });
+            await fetchHistoryAndStops();
+            await fetchLiveStatus();
+            centerVehicle();
+        } catch (e) {
+            alert('Hata: ' + e);
+        } finally {
+            btn.innerText = '⚡ Örnek Yolculuk Verisi Yükle (Demo)';
+            btn.disabled = false;
+        }
+    }
+
+    // Start App
+    window.onload = () => {
+        const picker = document.getElementById('date-picker');
+        if (picker) picker.value = selectedDate;
+        initMap();
+        fetchLiveStatus();
+        fetchHistoryAndStops(selectedDate);
+        setInterval(fetchLiveStatus, 4000);
+        setInterval(() => {
+            if (isToday(selectedDate)) {
+                fetchHistoryAndStops(selectedDate);
+            }
+        }, 8000);
+    };
+</script>
+
+</body>
+</html>

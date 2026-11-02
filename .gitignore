@@ -1,0 +1,7 @@
+tracker.db
+tracker.db-journal
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.DS_Store

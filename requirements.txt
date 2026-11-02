@@ -1,0 +1,2 @@
+# GM Buddy Tracker Server uses standard Python 3 libraries only.
+# No external dependencies required.
