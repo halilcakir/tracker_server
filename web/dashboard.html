@@ -710,12 +710,14 @@
     <div id="map-container">
         <div id="map"></div>
 
-        <!-- Layer Switcher -->
+        <!-- Layer Switcher & Map Controls -->
         <div class="map-overlay-card">
             <span style="font-size: 12px; font-weight: 700; color: var(--text-secondary);">Harita:</span>
             <button class="map-mode-btn active" id="btn-layer-dark" onclick="switchTileLayer('dark')">🌙 Koyu</button>
             <button class="map-mode-btn" id="btn-layer-osm" onclick="switchTileLayer('osm')">🗺️ Sokak</button>
             <button class="map-mode-btn" id="btn-layer-sat" onclick="switchTileLayer('sat')">🛰️ Uydu</button>
+            <div style="width: 1px; height: 18px; background: rgba(255,255,255,0.15); margin: 0 4px;"></div>
+            <button class="map-mode-btn" id="btn-auto-follow" onclick="toggleAutoFollow()" title="Yeni konum geldiğinde haritayı araca ortalar">🎯 Canlı Takip: Kapalı</button>
         </div>
 
         <!-- Playback Controller -->
@@ -744,6 +746,8 @@
     let isPlaying = false;
     let playbackInterval = null;
     let playbackIndex = 0;
+    let hasInitialFit = false;
+    let autoFollow = false;
 
     // Initialize Map with 100% Free, No-API-Key Tile Layers
     function initMap() {
@@ -794,6 +798,29 @@
         });
 
         carMarker = L.marker([41.0082, 28.9784], { icon: carIcon }).addTo(map);
+
+        // When user manually pans or zooms, disengage auto-follow so the map never interrupts inspection
+        map.on('dragstart zoomstart', function () {
+            if (autoFollow) {
+                toggleAutoFollow(false);
+            }
+        });
+    }
+
+    function toggleAutoFollow(forceState) {
+        if (typeof forceState === 'boolean') {
+            autoFollow = forceState;
+        } else {
+            autoFollow = !autoFollow;
+        }
+        const btn = document.getElementById('btn-auto-follow');
+        if (btn) {
+            btn.classList.toggle('active', autoFollow);
+            btn.innerText = autoFollow ? '🎯 Canlı Takip: Açık' : '🎯 Canlı Takip: Kapalı';
+        }
+        if (autoFollow && carMarker) {
+            map.panTo(carMarker.getLatLng());
+        }
     }
 
     function switchTileLayer(type) {
@@ -835,9 +862,14 @@
                 batPill.classList.toggle('charging', item.is_charging === 1);
                 document.getElementById('bat-icon').innerText = item.is_charging ? '⚡' : '🔋';
 
-                // Update vehicle marker
+                // Update vehicle marker position
                 const pos = [item.latitude, item.longitude];
                 carMarker.setLatLng(pos);
+
+                // Auto-follow map only if user explicitly enabled it
+                if (autoFollow && !isPlaying) {
+                    map.panTo(pos);
+                }
 
                 // Rotate marker if heading available
                 const iconEl = carMarker.getElement();
@@ -878,6 +910,7 @@
     function onDateSelect(val) {
         if (val) {
             selectedDate = val;
+            hasInitialFit = false;
             fetchHistoryAndStops(selectedDate);
         }
     }
@@ -890,12 +923,14 @@
         const day = String(cur.getDate()).padStart(2, '0');
         selectedDate = `${year}-${month}-${day}`;
         document.getElementById('date-picker').value = selectedDate;
+        hasInitialFit = false;
         fetchHistoryAndStops(selectedDate);
     }
 
     function selectToday() {
         selectedDate = getTodayDateStr();
         document.getElementById('date-picker').value = selectedDate;
+        hasInitialFit = false;
         fetchHistoryAndStops(selectedDate);
     }
 
@@ -917,6 +952,7 @@
             document.getElementById('stat-avg-speed').innerText = '0.0';
             document.getElementById('stat-points').innerText = '0';
             document.getElementById('stop-count').innerText = '0 Durak';
+            hasInitialFit = false;
             alert('Veritabanı başarıyla temizlendi.');
         } catch (e) {
             alert('Hata: ' + e);
@@ -944,8 +980,10 @@
                     lineJoin: 'round'
                 }).addTo(map);
 
-                if (!isPlaying) {
+                // Only fit bounds on the first load of the route, not on every background poll!
+                if (!hasInitialFit && !isPlaying) {
                     map.fitBounds(routePolyline.getBounds(), { padding: [50, 50] });
+                    hasInitialFit = true;
                 }
 
                 // Update slider limits
