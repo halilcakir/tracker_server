@@ -148,6 +148,8 @@ class TrackerHandler(BaseHTTPRequestHandler):
             self.handle_stops(params)
         elif path == "/api/stats":
             self.handle_stats(params)
+        elif path == "/api/match_route":
+            self.handle_match_route(params)
         elif path == "/api/dates":
             self.handle_dates()
         elif path == "/api/clear":
@@ -282,6 +284,88 @@ class TrackerHandler(BaseHTTPRequestHandler):
             points.append(d)
 
         self.send_json({"count": len(points), "points": points})
+
+    def handle_match_route(self, params):
+        import urllib.request
+        import urllib.error
+
+        date_str = params.get("date", [None])[0]
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        if date_str:
+            try:
+                day_start = datetime.strptime(date_str, "%Y-%m-%d").timestamp()
+                day_end = day_start + 86400
+                cursor.execute("SELECT latitude, longitude, speed FROM telemetry WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp ASC", (day_start, day_end))
+            except ValueError:
+                cursor.execute("SELECT latitude, longitude, speed FROM telemetry ORDER BY timestamp ASC")
+        else:
+            day_start = time.time() - 86400
+            cursor.execute("SELECT latitude, longitude, speed FROM telemetry WHERE timestamp >= ? ORDER BY timestamp ASC", (day_start,))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        if len(rows) < 2:
+            self.send_json({"snapped": False, "coordinates": [[r["latitude"], r["longitude"]] for r in rows]})
+            return
+
+        # Deduplicate consecutive stationary points (distance < 5m)
+        filtered_coords = []
+        for r in rows:
+            lat, lon = r["latitude"], r["longitude"]
+            if not filtered_coords:
+                filtered_coords.append([lon, lat])
+                continue
+            prev_lon, prev_lat = filtered_coords[-1]
+            if haversine_distance(prev_lat, prev_lon, lat, lon) > 4.0:
+                filtered_coords.append([lon, lat])
+
+        if len(filtered_coords) < 2:
+            self.send_json({"snapped": False, "coordinates": [[c[1], c[0]] for c in filtered_coords]})
+            return
+
+        # Snap to roads using OSRM in chunks of up to 40 coordinates
+        snapped_coords = []
+        CHUNK_SIZE = 40
+        for i in range(0, len(filtered_coords), CHUNK_SIZE - 1):
+            chunk = filtered_coords[i:i + CHUNK_SIZE]
+            if len(chunk) < 2:
+                for c in chunk:
+                    snapped_coords.append([c[1], c[0]])
+                continue
+
+            coord_str = ";".join(f"{c[0]:.6f},{c[1]:.6f}" for c in chunk)
+            radiuses = ";".join(["45"] * len(chunk))
+            url = f"https://router.project-osrm.org/match/v1/driving/{coord_str}?overview=full&geometries=geojson&radiuses={radiuses}"
+
+            matched_this_chunk = False
+            try:
+                req = urllib.request.Request(url, headers={'User-Agent': 'GM-Buddy-Tracker/1.0'})
+                with urllib.request.urlopen(req, timeout=4) as resp:
+                    res_data = json.loads(resp.read().decode('utf-8'))
+                    if res_data.get("code") == "Ok" and res_data.get("matchings"):
+                        for m in res_data["matchings"]:
+                            geom = m.get("geometry", {}).get("coordinates", [])
+                            for pt in geom:
+                                snapped_coords.append([pt[1], pt[0]])
+                        matched_this_chunk = True
+            except Exception:
+                pass
+
+            if not matched_this_chunk:
+                for c in chunk:
+                    snapped_coords.append([c[1], c[0]])
+
+        # Deduplicate adjacent snapped coords
+        final_coords = []
+        for c in snapped_coords:
+            if not final_coords or (abs(final_coords[-1][0] - c[0]) > 0.00001 or abs(final_coords[-1][1] - c[1]) > 0.00001):
+                final_coords.append(c)
+
+        self.send_json({"snapped": True, "coordinates": final_coords})
 
     def handle_stops(self, params):
         date_str = params.get("date", [None])[0]

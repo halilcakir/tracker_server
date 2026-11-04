@@ -718,6 +718,7 @@
             <button class="map-mode-btn" id="btn-layer-sat" onclick="switchTileLayer('sat')">🛰️ Uydu</button>
             <div style="width: 1px; height: 18px; background: rgba(255,255,255,0.15); margin: 0 4px;"></div>
             <button class="map-mode-btn" id="btn-auto-follow" onclick="toggleAutoFollow()" title="Yeni konum geldiğinde haritayı araca ortalar">🎯 Canlı Takip: Kapalı</button>
+            <button class="map-mode-btn" id="btn-snap-road" onclick="toggleSnapToRoad()" title="Rotayı binalar arasından çıkarıp cadde ve şerit asfaltına yapıştırır">🛣️ Yola Yapıştır: Kapalı</button>
         </div>
 
         <!-- Playback Controller -->
@@ -748,6 +749,56 @@
     let playbackIndex = 0;
     let hasInitialFit = false;
     let autoFollow = false;
+    let isSnapRoad = false;
+    let snappedPolyline = null;
+
+    async function toggleSnapToRoad() {
+        isSnapRoad = !isSnapRoad;
+        const btn = document.getElementById('btn-snap-road');
+        if (btn) {
+            btn.classList.toggle('active', isSnapRoad);
+            btn.innerText = isSnapRoad ? '🛣️ Yola Yapıştır: Açık' : '🛣️ Yola Yapıştır: Kapalı';
+        }
+        if (isSnapRoad) {
+            await fetchSnappedRoute();
+        } else {
+            if (snappedPolyline) {
+                map.removeLayer(snappedPolyline);
+                snappedPolyline = null;
+            }
+            if (routePolyline) {
+                routePolyline.setStyle({ opacity: 0.85 });
+            }
+        }
+    }
+
+    async function fetchSnappedRoute() {
+        if (!isSnapRoad) return;
+        try {
+            const res = await fetch('/api/match_route?date=' + selectedDate);
+            const data = await res.json();
+            if (data.coordinates && data.coordinates.length > 0) {
+                if (snappedPolyline) {
+                    map.removeLayer(snappedPolyline);
+                }
+                // Snapped road polyline in vivid emerald green along the road centerline
+                snappedPolyline = L.polyline(data.coordinates, {
+                    color: '#10b981',
+                    weight: 5,
+                    opacity: 0.95,
+                    lineJoin: 'round',
+                    lineCap: 'round'
+                }).addTo(map);
+
+                // Dim raw polyline slightly
+                if (routePolyline) {
+                    routePolyline.setStyle({ opacity: 0.35 });
+                }
+            }
+        } catch (e) {
+            console.error('Snap to road error:', e);
+        }
+    }
 
     // Initialize Map with 100% Free, No-API-Key Tile Layers
     function initMap() {
@@ -911,6 +962,10 @@
         if (val) {
             selectedDate = val;
             hasInitialFit = false;
+            if (snappedPolyline) {
+                map.removeLayer(snappedPolyline);
+                snappedPolyline = null;
+            }
             fetchHistoryAndStops(selectedDate);
         }
     }
@@ -924,6 +979,10 @@
         selectedDate = `${year}-${month}-${day}`;
         document.getElementById('date-picker').value = selectedDate;
         hasInitialFit = false;
+        if (snappedPolyline) {
+            map.removeLayer(snappedPolyline);
+            snappedPolyline = null;
+        }
         fetchHistoryAndStops(selectedDate);
     }
 
@@ -931,6 +990,10 @@
         selectedDate = getTodayDateStr();
         document.getElementById('date-picker').value = selectedDate;
         hasInitialFit = false;
+        if (snappedPolyline) {
+            map.removeLayer(snappedPolyline);
+            snappedPolyline = null;
+        }
         fetchHistoryAndStops(selectedDate);
     }
 
@@ -1008,6 +1071,9 @@
             document.getElementById('stat-avg-speed').innerText = stats.avg_speed_kmh;
             document.getElementById('stat-points').innerText = stats.total_points;
 
+            if (isSnapRoad) {
+                fetchSnappedRoute();
+            }
         } catch (e) {
             console.error('History fetch error:', e);
         }
